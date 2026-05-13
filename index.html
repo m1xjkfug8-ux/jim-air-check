@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Jim Air Check</title>
+
+<style>
+body{
+    font-family: Arial;
+    background:#1e1e1e;
+    color:white;
+    padding:15px;
+    margin:0;
+}
+
+.card{
+    background:#2a2a2a;
+    border-radius:12px;
+    padding:15px;
+}
+
+.title{
+    font-size:22px;
+    margin-bottom:10px;
+}
+
+.big{
+    font-size:36px;
+    font-weight:bold;
+}
+
+.small{
+    color:#cccccc;
+    margin-top:8px;
+}
+
+.good{color:#6dd66d;}
+.moderate{color:#ffd166;}
+.bad{color:#ff7b7b;}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+    <div class="title">Jim's Air Check</div>
+
+    <div id="status" class="big">Loading...</div>
+
+    <div class="small" id="details"></div>
+</div>
+
+<script>
+
+async function loadAirData(){
+
+const url =
+'https://air-quality-api.open-meteo.com/v1/air-quality?latitude=37.1305&longitude=-113.5083&hourly=pm10,pm2_5,ozone,grass_pollen&forecast_days=2';
+
+const response = await fetch(url);
+
+const data = await response.json();
+
+const pm25 = data.hourly.pm2_5[0];
+const pm10 = data.hourly.pm10[0];
+const ozone = data.hourly.ozone[0];
+const grass = data.hourly.grass_pollen[0];
+
+let score =
+(pm25 * 2) +
+(pm10 * 1.5) +
+(ozone * 0.05) +
+(grass * 1.5);
+
+let level = '';
+let css = '';
+
+if(score < 40){
+    level = 'LOW';
+    css = 'good';
+}
+else if(score < 80){
+    level = 'MODERATE';
+    css = 'moderate';
+}
+else{
+    level = 'HIGH';
+    css = 'bad';
+}
+
+document.getElementById('status').innerHTML =
+`<span class="${css}">${level}</span>`;
+
+document.getElementById('details').innerHTML =
+`
+PM2.5: ${pm25}<br>
+PM10: ${pm10}<br>
+Ozone: ${ozone}<br>
+Grass Pollen: ${grass}
+`;
+
+}
+
+loadAirData();
+
+</script>
+
+</body>
+</html>
