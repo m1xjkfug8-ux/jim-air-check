@@ -6,37 +6,48 @@
 
 <style>
 body{
-    font-family: Arial;
+    font-family: Arial, sans-serif;
     background:#1e1e1e;
     color:white;
-    padding:15px;
+    padding:12px;
     margin:0;
 }
-
 .card{
     background:#2a2a2a;
     border-radius:12px;
-    padding:15px;
+    padding:14px;
+    max-width:540px;
 }
-
 .title{
     font-size:22px;
-    margin-bottom:10px;
+    margin-bottom:6px;
 }
-
 .big{
-    font-size:36px;
+    font-size:34px;
     font-weight:bold;
+    margin-bottom:8px;
 }
-
-.small{
+.row{
+    margin:5px 0;
+}
+.label{
     color:#cccccc;
-    margin-top:8px;
 }
-
-.good{color:#6dd66d;}
-.moderate{color:#ffd166;}
-.bad{color:#ff7b7b;}
+.excellent{color:#6dd66d;}
+.ok{color:#ffd166;}
+.notgreat{color:#ff9f43;}
+.stayhome{color:#ff6b6b;}
+.section{
+    margin-top:10px;
+    padding-top:8px;
+    border-top:1px solid #444;
+}
+.small{
+    font-size:12px;
+    color:#bbbbbb;
+    margin-top:10px;
+    line-height:1.35;
+}
 </style>
 </head>
 
@@ -44,65 +55,179 @@ body{
 
 <div class="card">
     <div class="title">Jim's Air Check</div>
-
     <div id="status" class="big">Loading...</div>
+    <div id="summary"></div>
 
-    <div class="small" id="details"></div>
+    <div class="section">
+        <strong>Forecast</strong>
+        <div id="forecast"></div>
+    </div>
+
+    <div class="section">
+        <strong>Readings</strong>
+        <div id="readings"></div>
+    </div>
+
+    <div class="small" id="note"></div>
 </div>
 
 <script>
+const LAT = 37.1305;
+const LON = -113.5083;
+
+function num(v, digits=1){
+    return v === null || v === undefined || isNaN(v) ? "N/A" : Number(v).toFixed(digits);
+}
+
+function categoryAQI(v){
+    if(v == null || isNaN(v)) return ["N/A", ""];
+    if(v <= 50) return ["Good", "excellent"];
+    if(v <= 100) return ["Moderate", "ok"];
+    return ["Poor", "stayhome"];
+}
+
+function categoryPM25(v){
+    if(v == null || isNaN(v)) return ["N/A", ""];
+    if(v <= 12) return ["Good", "excellent"];
+    if(v <= 35.4) return ["Moderate", "ok"];
+    return ["Poor", "stayhome"];
+}
+
+function categoryPM10(v){
+    if(v == null || isNaN(v)) return ["N/A", ""];
+    if(v <= 54) return ["Good", "excellent"];
+    if(v <= 154) return ["Moderate", "ok"];
+    return ["Poor", "stayhome"];
+}
+
+function categoryHumidity(v){
+    if(v == null || isNaN(v)) return ["N/A", ""];
+    if(v < 15) return ["Very Dry", "notgreat"];
+    if(v < 25) return ["Dry", "ok"];
+    return ["Helpful", "excellent"];
+}
+
+function categoryWind(v){
+    if(v == null || isNaN(v)) return ["N/A", ""];
+    if(v < 8) return ["Calm", "excellent"];
+    if(v < 15) return ["Breezy", "ok"];
+    return ["Dust Risk", "notgreat"];
+}
+
+function levelFromScore(score){
+    if(score < 35) return ["Excellent", "excellent"];
+    if(score < 70) return ["OK", "ok"];
+    if(score < 105) return ["Not Great", "notgreat"];
+    return ["Stay Home", "stayhome"];
+}
+
+function scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
+    let score = 0;
+
+    if(pm25 != null) score += pm25 * 2.0;
+    if(pm10 != null) score += pm10 * 0.6;
+    if(usaqi != null) score += usaqi * 0.45;
+    if(ozoneAqi != null) score += ozoneAqi * 0.35;
+    if(dust != null) score += dust * 1.4;
+
+    if(wind != null && wind > 8) score += (wind - 8) * 2.3;
+    if(humidity != null && humidity < 25) score += (25 - humidity) * 1.2;
+
+    // Rain usually helps you. Reduce score when precipitation is present.
+    if(rain != null && rain > 0.02) score -= 20;
+
+    return Math.max(0, score);
+}
+
+function culprit(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
+    let c = [];
+
+    if(pm25 > 12) c.push("fine particulates");
+    if(pm10 > 40) c.push("coarse dust");
+    if(ozoneAqi > 50) c.push("ozone");
+    if(dust > 2) c.push("modeled dust");
+    if(wind > 12) c.push("wind");
+    if(humidity < 20) c.push("dry air");
+    if(rain > 0.02) c.push("rain helping");
+
+    return c.length ? c.join(" + ") : "no major spike detected";
+}
 
 async function loadAirData(){
+    const airUrl =
+    `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${LAT}&longitude=${LON}&hourly=pm10,pm2_5,dust,us_aqi,us_aqi_pm2_5,us_aqi_pm10,us_aqi_ozone&timezone=auto&forecast_hours=30`;
 
-const url =
-'https://air-quality-api.open-meteo.com/v1/air-quality?latitude=37.1305&longitude=-113.5083&hourly=pm10,pm2_5,ozone,grass_pollen&forecast_days=2';
+    const weatherUrl =
+    `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=relative_humidity_2m,wind_speed_10m,precipitation&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_hours=30`;
 
-const response = await fetch(url);
+    const [airResponse, weatherResponse] = await Promise.all([
+        fetch(airUrl),
+        fetch(weatherUrl)
+    ]);
 
-const data = await response.json();
+    const air = await airResponse.json();
+    const weather = await weatherResponse.json();
 
-const pm25 = data.hourly.pm2_5[0];
-const pm10 = data.hourly.pm10[0];
-const ozone = data.hourly.ozone[0];
-const grass = data.hourly.grass_pollen[0];
+    function at(h){
+        const i = Math.min(h, air.hourly.time.length - 1);
 
-let score =
-(pm25 * 2) +
-(pm10 * 1.5) +
-(ozone * 0.05) +
-(grass * 1.5);
+        const pm25 = air.hourly.pm2_5[i];
+        const pm10 = air.hourly.pm10[i];
+        const usaqi = air.hourly.us_aqi[i];
+        const ozoneAqi = air.hourly.us_aqi_ozone[i];
+        const dust = air.hourly.dust[i];
+        const humidity = weather.hourly.relative_humidity_2m[i];
+        const wind = weather.hourly.wind_speed_10m[i];
+        const rain = weather.hourly.precipitation[i];
 
-let level = '';
-let css = '';
+        const score = scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain);
+        const [level, css] = levelFromScore(score);
 
-if(score < 40){
-    level = 'LOW';
-    css = 'good';
+        return {pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain, score, level, css};
+    }
+
+    const now = at(0);
+    const h2 = at(2);
+    const h12 = at(12);
+    const h24 = at(24);
+
+    const [pm25Cat, pm25Css] = categoryPM25(now.pm25);
+    const [pm10Cat, pm10Css] = categoryPM10(now.pm10);
+    const [aqiCat, aqiCss] = categoryAQI(now.usaqi);
+    const [ozoneCat, ozoneCss] = categoryAQI(now.ozoneAqi);
+    const [humCat, humCss] = categoryHumidity(now.humidity);
+    const [windCat, windCss] = categoryWind(now.wind);
+
+    document.getElementById("status").innerHTML =
+        `<span class="${now.css}">${now.level}</span>`;
+
+    document.getElementById("summary").innerHTML =
+        `<div class="row"><span class="label">Likely issue:</span> ${culprit(now.pm25, now.pm10, now.usaqi, now.ozoneAqi, now.dust, now.humidity, now.wind, now.rain)}</div>`;
+
+    document.getElementById("forecast").innerHTML =
+        `<div class="row">+2 hours: <span class="${h2.css}">${h2.level}</span></div>
+         <div class="row">+12 hours: <span class="${h12.css}">${h12.level}</span></div>
+         <div class="row">+24 hours: <span class="${h24.css}">${h24.level}</span></div>`;
+
+    document.getElementById("readings").innerHTML =
+        `<div class="row"><span class="label">US AQI:</span> ${num(now.usaqi,0)} — <span class="${aqiCss}">${aqiCat}</span></div>
+         <div class="row"><span class="label">PM2.5:</span> ${num(now.pm25)} — <span class="${pm25Css}">${pm25Cat}</span></div>
+         <div class="row"><span class="label">PM10:</span> ${num(now.pm10)} — <span class="${pm10Css}">${pm10Cat}</span></div>
+         <div class="row"><span class="label">Ozone AQI:</span> ${num(now.ozoneAqi,0)} — <span class="${ozoneCss}">${ozoneCat}</span></div>
+         <div class="row"><span class="label">Dust:</span> ${num(now.dust)}</div>
+         <div class="row"><span class="label">Wind:</span> ${num(now.wind)} mph — <span class="${windCss}">${windCat}</span></div>
+         <div class="row"><span class="label">Humidity:</span> ${num(now.humidity,0)}% — <span class="${humCss}">${humCat}</span></div>
+         <div class="row"><span class="label">Rain:</span> ${num(now.rain,2)} in/hr</div>`;
+
+    document.getElementById("note").innerHTML =
+        `No-key model-based forecast. Best used for trends: dust, wind, dry air, ozone, PM2.5, and PM10. Pollen is not included because reliable no-key U.S. pollen data is weak.`;
 }
-else if(score < 80){
-    level = 'MODERATE';
-    css = 'moderate';
-}
-else{
-    level = 'HIGH';
-    css = 'bad';
-}
 
-document.getElementById('status').innerHTML =
-`<span class="${css}">${level}</span>`;
-
-document.getElementById('details').innerHTML =
-`
-PM2.5: ${pm25}<br>
-PM10: ${pm10}<br>
-Ozone: ${ozone}<br>
-Grass Pollen: ${grass}
-`;
-
-}
-
-loadAirData();
-
+loadAirData().catch(err => {
+    document.getElementById("status").innerHTML = `<span class="stayhome">Data Error</span>`;
+    document.getElementById("summary").innerHTML = "Could not load air/weather data.";
+    console.error(err);
+});
 </script>
 
 </body>
