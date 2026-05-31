@@ -22,6 +22,11 @@ body{
     font-size:22px;
     margin-bottom:6px;
 }
+.outlook-label{
+    color:#cccccc;
+    font-size:14px;
+    margin-top:4px;
+}
 .big{
     font-size:34px;
     font-weight:bold;
@@ -35,12 +40,22 @@ body{
 }
 .excellent{color:#6dd66d;}
 .ok{color:#ffd166;}
-.notgreat{color:#ff9f43;}
-.stayhome{color:#ff6b6b;}
+.irritating{color:#ff9f43;}
+.rough{color:#ff6b6b;}
 .section{
     margin-top:10px;
     padding-top:8px;
     border-top:1px solid #444;
+}
+.recommendation{
+    font-size:17px;
+    line-height:1.35;
+    margin-top:6px;
+}
+.why{
+    margin-top:8px;
+    color:#dddddd;
+    line-height:1.35;
 }
 .small{
     font-size:12px;
@@ -55,8 +70,15 @@ body{
 
 <div class="card">
     <div class="title">Jim's Air Check</div>
+
+    <div class="outlook-label">Jim's Air Outlook</div>
     <div id="status" class="big">Loading...</div>
-    <div id="summary"></div>
+
+    <div class="section">
+        <strong>Recommendation</strong>
+        <div id="recommendation" class="recommendation"></div>
+        <div id="why" class="why"></div>
+    </div>
 
     <div class="section">
         <strong>Forecast</strong>
@@ -64,7 +86,7 @@ body{
     </div>
 
     <div class="section">
-        <strong>Readings</strong>
+        <strong>Official / Modeled Readings</strong>
         <div id="readings"></div>
     </div>
 
@@ -83,26 +105,26 @@ function categoryAQI(v){
     if(v == null || isNaN(v)) return ["N/A", ""];
     if(v <= 50) return ["Good", "excellent"];
     if(v <= 100) return ["Moderate", "ok"];
-    return ["Poor", "stayhome"];
+    return ["Poor", "rough"];
 }
 
 function categoryPM25(v){
     if(v == null || isNaN(v)) return ["N/A", ""];
     if(v <= 12) return ["Good", "excellent"];
     if(v <= 35.4) return ["Moderate", "ok"];
-    return ["Poor", "stayhome"];
+    return ["Poor", "rough"];
 }
 
 function categoryPM10(v){
     if(v == null || isNaN(v)) return ["N/A", ""];
     if(v <= 54) return ["Good", "excellent"];
     if(v <= 154) return ["Moderate", "ok"];
-    return ["Poor", "stayhome"];
+    return ["Poor", "rough"];
 }
 
 function categoryHumidity(v){
     if(v == null || isNaN(v)) return ["N/A", ""];
-    if(v < 15) return ["Very Dry", "notgreat"];
+    if(v < 15) return ["Very Dry", "irritating"];
     if(v < 25) return ["Dry", "ok"];
     return ["Helpful", "excellent"];
 }
@@ -111,29 +133,41 @@ function categoryWind(v){
     if(v == null || isNaN(v)) return ["N/A", ""];
     if(v < 8) return ["Calm", "excellent"];
     if(v < 15) return ["Breezy", "ok"];
-    return ["Dust Risk", "notgreat"];
+    return ["Dust Risk", "irritating"];
 }
 
 function levelFromScore(score){
-    if(score < 35) return ["Excellent", "excellent"];
-    if(score < 70) return ["OK", "ok"];
-    if(score < 105) return ["Not Great", "notgreat"];
-    return ["Stay Home", "stayhome"];
+    if(score < 35) return ["Good Window", "excellent"];
+    if(score < 70) return ["Manageable", "ok"];
+    if(score < 105) return ["Irritating", "irritating"];
+    return ["Rough Day", "rough"];
+}
+
+function recommendationFromLevel(level){
+    if(level === "Good Window"){
+        return "Outdoor time should be reasonable. Still, keep an eye on dry air if symptoms are already active.";
+    }
+    if(level === "Manageable"){
+        return "Outdoor time is probably workable, but expect some irritation if you stay out too long.";
+    }
+    if(level === "Irritating"){
+        return "Limit prolonged outdoor time. Sunglasses may help. Consider a mask if it is windy or dusty.";
+    }
+    return "Keep outdoor time short if symptoms are active. Run indoor filtration if available and rinse eyes/nose after being outside.";
 }
 
 function scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
     let score = 0;
 
-    if(pm25 != null) score += pm25 * 2.0;
-    if(pm10 != null) score += pm10 * 0.6;
-    if(usaqi != null) score += usaqi * 0.45;
-    if(ozoneAqi != null) score += ozoneAqi * 0.35;
-    if(dust != null) score += dust * 1.4;
+    if(pm25 != null) score += pm25 * 1.8;
+    if(pm10 != null) score += pm10 * 0.5;
+    if(usaqi != null) score += usaqi * 0.35;
+    if(ozoneAqi != null) score += ozoneAqi * 0.25;
+    if(dust != null) score += dust * 1.1;
 
-    if(wind != null && wind > 8) score += (wind - 8) * 2.3;
-    if(humidity != null && humidity < 25) score += (25 - humidity) * 1.2;
+    if(wind != null && wind > 8) score += (wind - 8) * 1.8;
+    if(humidity != null && humidity < 25) score += (25 - humidity) * 0.9;
 
-    // Rain usually helps you. Reduce score when precipitation is present.
     if(rain != null && rain > 0.02) score -= 20;
 
     return Math.max(0, score);
@@ -147,10 +181,10 @@ function culprit(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
     if(ozoneAqi > 50) c.push("ozone");
     if(dust > 2) c.push("modeled dust");
     if(wind > 12) c.push("wind");
-    if(humidity < 20) c.push("dry air");
-    if(rain > 0.02) c.push("rain helping");
+    if(humidity < 20) c.push("very dry air");
+    if(rain > 0.02) c.push("rain may help");
 
-    return c.length ? c.join(" + ") : "no major spike detected";
+    return c.length ? c.join(" + ") : "no major irritant spike detected";
 }
 
 async function loadAirData(){
@@ -198,11 +232,16 @@ async function loadAirData(){
     const [humCat, humCss] = categoryHumidity(now.humidity);
     const [windCat, windCss] = categoryWind(now.wind);
 
+    const issue = culprit(now.pm25, now.pm10, now.usaqi, now.ozoneAqi, now.dust, now.humidity, now.wind, now.rain);
+
     document.getElementById("status").innerHTML =
         `<span class="${now.css}">${now.level}</span>`;
 
-    document.getElementById("summary").innerHTML =
-        `<div class="row"><span class="label">Likely issue:</span> ${culprit(now.pm25, now.pm10, now.usaqi, now.ozoneAqi, now.dust, now.humidity, now.wind, now.rain)}</div>`;
+    document.getElementById("recommendation").innerHTML =
+        recommendationFromLevel(now.level);
+
+    document.getElementById("why").innerHTML =
+        `<span class="label">Why:</span> ${issue}. Official AQI may still look fine while your nose and eyes file a formal complaint.`;
 
     document.getElementById("forecast").innerHTML =
         `<div class="row">+2 hours: <span class="${h2.css}">${h2.level}</span></div>
@@ -214,7 +253,7 @@ async function loadAirData(){
          <div class="row"><span class="label">PM2.5:</span> ${num(now.pm25)} — <span class="${pm25Css}">${pm25Cat}</span></div>
          <div class="row"><span class="label">PM10:</span> ${num(now.pm10)} — <span class="${pm10Css}">${pm10Cat}</span></div>
          <div class="row"><span class="label">Ozone AQI:</span> ${num(now.ozoneAqi,0)} — <span class="${ozoneCss}">${ozoneCat}</span></div>
-         <div class="row"><span class="label">Dust:</span> ${num(now.dust)}</div>
+         <div class="row"><span class="label">Modeled Dust:</span> ${num(now.dust)}</div>
          <div class="row"><span class="label">Wind:</span> ${num(now.wind)} mph — <span class="${windCss}">${windCat}</span></div>
          <div class="row"><span class="label">Humidity:</span> ${num(now.humidity,0)}% — <span class="${humCss}">${humCat}</span></div>
          <div class="row"><span class="label">Rain:</span> ${num(now.rain,2)} in/hr</div>`;
@@ -224,8 +263,8 @@ async function loadAirData(){
 }
 
 loadAirData().catch(err => {
-    document.getElementById("status").innerHTML = `<span class="stayhome">Data Error</span>`;
-    document.getElementById("summary").innerHTML = "Could not load air/weather data.";
+    document.getElementById("status").innerHTML = `<span class="rough">Data Error</span>`;
+    document.getElementById("recommendation").innerHTML = "Could not load air/weather data.";
     console.error(err);
 });
 </script>
