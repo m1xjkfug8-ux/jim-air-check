@@ -25,7 +25,6 @@ body{
 .outlook-label{
     color:#cccccc;
     font-size:14px;
-    margin-top:4px;
 }
 .big{
     font-size:34px;
@@ -57,6 +56,11 @@ body{
     color:#dddddd;
     line-height:1.35;
 }
+.why ul{
+    margin-top:6px;
+    margin-bottom:0;
+    padding-left:22px;
+}
 .small{
     font-size:12px;
     color:#bbbbbb;
@@ -77,6 +81,7 @@ body{
     <div class="section">
         <strong>Recommendation</strong>
         <div id="recommendation" class="recommendation"></div>
+        <div id="bestwindow" class="why"></div>
         <div id="why" class="why"></div>
     </div>
 
@@ -86,7 +91,7 @@ body{
     </div>
 
     <div class="section">
-        <strong>Official / Modeled Readings</strong>
+        <strong>Environmental Conditions</strong>
         <div id="readings"></div>
     </div>
 
@@ -173,18 +178,65 @@ function scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
     return Math.max(0, score);
 }
 
-function culprit(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
-    let c = [];
+function issueBullets(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
+    let bullets = [];
 
-    if(pm25 > 12) c.push("fine particulates");
-    if(pm10 > 40) c.push("coarse dust");
-    if(ozoneAqi > 50) c.push("ozone");
-    if(dust > 2) c.push("modeled dust");
-    if(wind > 12) c.push("wind");
-    if(humidity < 20) c.push("very dry air");
-    if(rain > 0.02) c.push("rain may help");
+    if(humidity < 20) bullets.push(`Very dry air: ${num(humidity,0)}% humidity`);
+    if(wind > 12) bullets.push(`Wind may stir up dust: ${num(wind)} mph`);
+    if(dust > 2) bullets.push(`Modeled dust is elevated: ${num(dust)}`);
+    if(pm25 > 12) bullets.push(`Fine particulates are elevated: PM2.5 ${num(pm25)}`);
+    if(pm10 > 40) bullets.push(`Coarse particles/dust are elevated: PM10 ${num(pm10)}`);
+    if(ozoneAqi > 50) bullets.push(`Ozone may be irritating: AQI ${num(ozoneAqi,0)}`);
+    if(rain > 0.02) bullets.push("Rain may help settle dust and pollen.");
 
-    return c.length ? c.join(" + ") : "no major irritant spike detected";
+    if(bullets.length === 0){
+        bullets.push("No major irritant spike detected.");
+    }
+
+    bullets.push(`Official AQI is ${num(usaqi,0)}, which may look acceptable even when dry air and dust still bother you.`);
+
+    return bullets;
+}
+
+function findBestWindow(air, weather){
+    let bestHour = 0;
+    let bestScore = 999999;
+
+    for(let h = 0; h < 24; h++){
+        const pm25 = air.hourly.pm2_5[h];
+        const pm10 = air.hourly.pm10[h];
+        const usaqi = air.hourly.us_aqi[h];
+        const ozoneAqi = air.hourly.us_aqi_ozone[h];
+        const dust = air.hourly.dust[h];
+        const humidity = weather.hourly.relative_humidity_2m[h];
+        const wind = weather.hourly.wind_speed_10m[h];
+        const rain = weather.hourly.precipitation[h];
+
+        const score = scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain);
+
+        if(score < bestScore){
+            bestScore = score;
+            bestHour = h;
+        }
+    }
+
+    if(bestHour === 0){
+        return "Now appears to be the best outdoor window.";
+    }
+
+    if(bestHour <= 3){
+        return `Conditions may improve in about ${bestHour} hour(s).`;
+    }
+
+    if(bestHour <= 8){
+        return `Best window may be later today, about ${bestHour} hour(s) from now.`;
+    }
+
+    if(bestHour <= 16){
+        return `Best window may be this evening or overnight, about ${bestHour} hour(s) from now.`;
+    }
+
+    return `Best window may be tomorrow, about ${bestHour} hour(s) from now.`;
 }
 
 async function loadAirData(){
@@ -232,7 +284,8 @@ async function loadAirData(){
     const [humCat, humCss] = categoryHumidity(now.humidity);
     const [windCat, windCss] = categoryWind(now.wind);
 
-    const issue = culprit(now.pm25, now.pm10, now.usaqi, now.ozoneAqi, now.dust, now.humidity, now.wind, now.rain);
+    const bullets = issueBullets(now.pm25, now.pm10, now.usaqi, now.ozoneAqi, now.dust, now.humidity, now.wind, now.rain);
+    const bestWindow = findBestWindow(air, weather);
 
     document.getElementById("status").innerHTML =
         `<span class="${now.css}">${now.level}</span>`;
@@ -240,8 +293,12 @@ async function loadAirData(){
     document.getElementById("recommendation").innerHTML =
         recommendationFromLevel(now.level);
 
+    document.getElementById("bestwindow").innerHTML =
+        `<span class="label">Best Outdoor Window:</span><br>${bestWindow}`;
+
     document.getElementById("why").innerHTML =
-        `<span class="label">Why:</span> ${issue}. Official AQI may still look fine while your nose and eyes file a formal complaint.`;
+        `<span class="label">Why:</span>
+         <ul>${bullets.map(item => `<li>${item}</li>`).join("")}</ul>`;
 
     document.getElementById("forecast").innerHTML =
         `<div class="row">+2 hours: <span class="${h2.css}">${h2.level}</span></div>
