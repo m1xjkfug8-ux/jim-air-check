@@ -25,6 +25,7 @@ body{
 .outlook-label{
     color:#cccccc;
     font-size:14px;
+    margin-top:4px;
 }
 .big{
     font-size:34px;
@@ -81,6 +82,7 @@ body{
     <div class="section">
         <strong>Recommendation</strong>
         <div id="recommendation" class="recommendation"></div>
+        <div id="smokeline" class="why"></div>
         <div id="bestwindow" class="why"></div>
         <div id="why" class="why"></div>
     </div>
@@ -91,7 +93,7 @@ body{
     </div>
 
     <div class="section">
-        <strong>Environmental Conditions</strong>
+        <strong>Air & Environmental Readings</strong>
         <div id="readings"></div>
     </div>
 
@@ -110,21 +112,53 @@ function categoryAQI(v){
     if(v == null || isNaN(v)) return ["N/A", ""];
     if(v <= 50) return ["Good", "excellent"];
     if(v <= 100) return ["Moderate", "ok"];
-    return ["Poor", "rough"];
+    if(v <= 150) return ["Unhealthy for Sensitive Groups", "irritating"];
+    return ["Unhealthy", "rough"];
 }
 
 function categoryPM25(v){
     if(v == null || isNaN(v)) return ["N/A", ""];
     if(v <= 12) return ["Good", "excellent"];
     if(v <= 35.4) return ["Moderate", "ok"];
-    return ["Poor", "rough"];
+    if(v <= 55.4) return ["Unhealthy for Sensitive Groups", "irritating"];
+    return ["Unhealthy", "rough"];
+}
+
+// Personal wildfire-season interpretation. This is intentionally more cautious than a simple official AQI label.
+function categorySmokePM25(v){
+    if(v == null || isNaN(v)) return ["N/A", ""];
+    if(v <= 8) return ["Excellent", "excellent"];
+    if(v <= 12) return ["OK", "ok"];
+    if(v <= 25) return ["Not great", "irritating"];
+    return ["Stay home", "rough"];
+}
+
+function smokeMessage(pm25){
+    if(pm25 == null || isNaN(pm25)){
+        return "Wildfire Smoke / Fine Particles: data unavailable.";
+    }
+    const [smokeCat, smokeCss] = categorySmokePM25(pm25);
+    let message = "";
+
+    if(smokeCat === "Excellent"){
+        message = "Fine-particle levels look low right now.";
+    } else if(smokeCat === "OK"){
+        message = "Fine-particle levels are acceptable, but worth watching during smoke season.";
+    } else if(smokeCat === "Not great"){
+        message = "Fine particles are elevated. Smoke or other fine-particle irritation is possible.";
+    } else {
+        message = "Fine particles are high. Treat this like a smoke-sensitive day: limit outside time and use filtration if available.";
+    }
+
+    return `<span class="label">Wildfire Smoke / Fine Particles:</span> <span class="${smokeCss}">${smokeCat}</span><br>${message}`;
 }
 
 function categoryPM10(v){
     if(v == null || isNaN(v)) return ["N/A", ""];
     if(v <= 54) return ["Good", "excellent"];
     if(v <= 154) return ["Moderate", "ok"];
-    return ["Poor", "rough"];
+    if(v <= 254) return ["Unhealthy for Sensitive Groups", "irritating"];
+    return ["Unhealthy", "rough"];
 }
 
 function categoryHumidity(v){
@@ -142,29 +176,29 @@ function categoryWind(v){
 }
 
 function levelFromScore(score){
-    if(score < 35) return ["Good Window", "excellent"];
-    if(score < 70) return ["Manageable", "ok"];
-    if(score < 105) return ["Irritating", "irritating"];
-    return ["Rough Day", "rough"];
+    if(score < 35) return ["Excellent", "excellent"];
+    if(score < 70) return ["OK", "ok"];
+    if(score < 105) return ["Not great", "irritating"];
+    return ["Stay home", "rough"];
 }
 
 function recommendationFromLevel(level){
-    if(level === "Good Window"){
+    if(level === "Excellent"){
         return "Outdoor time should be reasonable. Still, keep an eye on dry air if symptoms are already active.";
     }
-    if(level === "Manageable"){
+    if(level === "OK"){
         return "Outdoor time is probably workable, but expect some irritation if you stay out too long.";
     }
-    if(level === "Irritating"){
-        return "Limit prolonged outdoor time. Sunglasses may help. Consider a mask if it is windy or dusty.";
+    if(level === "Not great"){
+        return "Limit prolonged outdoor time. Sunglasses may help. Consider a mask if it is windy, dusty, or smoky.";
     }
-    return "Keep outdoor time short if symptoms are active. Run indoor filtration if available and rinse eyes/nose after being outside.";
+    return "Keep outdoor time short. Run indoor filtration if available, keep windows closed if smoke is present, and rinse eyes/nose after being outside.";
 }
 
 function scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
     let score = 0;
 
-    if(pm25 != null) score += pm25 * 1.8;
+    if(pm25 != null) score += pm25 * 2.2;       // extra weight during smoke season
     if(pm10 != null) score += pm10 * 0.5;
     if(usaqi != null) score += usaqi * 0.35;
     if(ozoneAqi != null) score += ozoneAqi * 0.25;
@@ -181,28 +215,33 @@ function scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
 function issueBullets(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain){
     let bullets = [];
 
-    if(humidity < 20) bullets.push(`Very dry air: ${num(humidity,0)}% humidity`);
-    if(wind > 12) bullets.push(`Wind may stir up dust: ${num(wind)} mph`);
-    if(dust > 2) bullets.push(`Modeled dust is elevated: ${num(dust)}`);
-    if(pm25 > 12) bullets.push(`Fine particulates are elevated: PM2.5 ${num(pm25)}`);
-    if(pm10 > 40) bullets.push(`Coarse particles/dust are elevated: PM10 ${num(pm10)}`);
+    if(pm25 > 25){
+        bullets.push(`Wildfire smoke / fine-particle concern: PM2.5 ${num(pm25)} µg/m³`);
+    } else if(pm25 > 12){
+        bullets.push(`Fine particles are elevated: PM2.5 ${num(pm25)} µg/m³`);
+    }
+
+    if(pm10 > 40) bullets.push(`Coarse particles/dust are elevated: PM10 ${num(pm10)} µg/m³`);
     if(ozoneAqi > 50) bullets.push(`Ozone may be irritating: AQI ${num(ozoneAqi,0)}`);
-    if(rain > 0.02) bullets.push("Rain may help settle dust and pollen.");
+    if(dust > 2) bullets.push(`Modeled dust is elevated: ${num(dust)}`);
+    if(wind > 12) bullets.push(`Wind may stir up dust or move smoke around: ${num(wind)} mph`);
+    if(humidity < 20) bullets.push(`Very dry air: ${num(humidity,0)}% humidity`);
+    if(rain > 0.02) bullets.push("Rain may help settle dust and particles.");
 
     if(bullets.length === 0){
         bullets.push("No major irritant spike detected.");
     }
 
-    bullets.push(`Official AQI is ${num(usaqi,0)}, which may look acceptable even when dry air and dust still bother you.`);
-
+    bullets.push(`Official/model AQI is ${num(usaqi,0)}. That can look acceptable even when dry air, dust, or smoke still bothers you.`);
     return bullets;
 }
 
 function findBestWindow(air, weather){
     let bestHour = 0;
     let bestScore = 999999;
+    const maxHours = Math.min(24, air.hourly.time.length, weather.hourly.time.length);
 
-    for(let h = 0; h < 24; h++){
+    for(let h = 0; h < maxHours; h++){
         const pm25 = air.hourly.pm2_5[h];
         const pm10 = air.hourly.pm10[h];
         const usaqi = air.hourly.us_aqi[h];
@@ -211,7 +250,6 @@ function findBestWindow(air, weather){
         const humidity = weather.hourly.relative_humidity_2m[h];
         const wind = weather.hourly.wind_speed_10m[h];
         const rain = weather.hourly.precipitation[h];
-
         const score = scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain);
 
         if(score < bestScore){
@@ -223,19 +261,15 @@ function findBestWindow(air, weather){
     if(bestHour === 0){
         return "Now appears to be the best outdoor window.";
     }
-
     if(bestHour <= 3){
         return `Conditions may improve in about ${bestHour} hour(s).`;
     }
-
     if(bestHour <= 8){
         return `Best window may be later today, about ${bestHour} hour(s) from now.`;
     }
-
     if(bestHour <= 16){
         return `Best window may be this evening or overnight, about ${bestHour} hour(s) from now.`;
     }
-
     return `Best window may be tomorrow, about ${bestHour} hour(s) from now.`;
 }
 
@@ -251,11 +285,15 @@ async function loadAirData(){
         fetch(weatherUrl)
     ]);
 
+    if(!airResponse.ok || !weatherResponse.ok){
+        throw new Error("Data request failed");
+    }
+
     const air = await airResponse.json();
     const weather = await weatherResponse.json();
 
     function at(h){
-        const i = Math.min(h, air.hourly.time.length - 1);
+        const i = Math.min(h, air.hourly.time.length - 1, weather.hourly.time.length - 1);
 
         const pm25 = air.hourly.pm2_5[i];
         const pm10 = air.hourly.pm10[i];
@@ -266,10 +304,19 @@ async function loadAirData(){
         const wind = weather.hourly.wind_speed_10m[i];
         const rain = weather.hourly.precipitation[i];
 
-        const score = scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain);
-        const [level, css] = levelFromScore(score);
+        const baseScore = scoreHour(pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain);
+        const [baseLevel, baseCss] = levelFromScore(baseScore);
+        const [smokeLevel, smokeCss] = categorySmokePM25(pm25);
 
-        return {pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain, score, level, css};
+        // If PM2.5 is clearly bad, let smoke/fine particles override the general comfort score.
+        if(smokeLevel === "Stay home"){
+            return {pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain, score: baseScore, level: "Stay home", css: "rough"};
+        }
+        if(smokeLevel === "Not great" && (baseLevel === "Excellent" || baseLevel === "OK")){
+            return {pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain, score: baseScore, level: "Not great", css: "irritating"};
+        }
+
+        return {pm25, pm10, usaqi, ozoneAqi, dust, humidity, wind, rain, score: baseScore, level: baseLevel, css: baseCss};
     }
 
     const now = at(0);
@@ -278,6 +325,7 @@ async function loadAirData(){
     const h24 = at(24);
 
     const [pm25Cat, pm25Css] = categoryPM25(now.pm25);
+    const [smokeCat, smokeCss] = categorySmokePM25(now.pm25);
     const [pm10Cat, pm10Css] = categoryPM10(now.pm10);
     const [aqiCat, aqiCss] = categoryAQI(now.usaqi);
     const [ozoneCat, ozoneCss] = categoryAQI(now.ozoneAqi);
@@ -293,6 +341,8 @@ async function loadAirData(){
     document.getElementById("recommendation").innerHTML =
         recommendationFromLevel(now.level);
 
+    document.getElementById("smokeline").innerHTML = smokeMessage(now.pm25);
+
     document.getElementById("bestwindow").innerHTML =
         `<span class="label">Best Outdoor Window:</span><br>${bestWindow}`;
 
@@ -306,9 +356,10 @@ async function loadAirData(){
          <div class="row">+24 hours: <span class="${h24.css}">${h24.level}</span></div>`;
 
     document.getElementById("readings").innerHTML =
-        `<div class="row"><span class="label">US AQI:</span> ${num(now.usaqi,0)} — <span class="${aqiCss}">${aqiCat}</span></div>
-         <div class="row"><span class="label">PM2.5:</span> ${num(now.pm25)} — <span class="${pm25Css}">${pm25Cat}</span></div>
-         <div class="row"><span class="label">PM10:</span> ${num(now.pm10)} — <span class="${pm10Css}">${pm10Cat}</span></div>
+        `<div class="row"><span class="label">Wildfire Smoke / Fine Particles:</span> PM2.5 ${num(now.pm25)} µg/m³ — <span class="${smokeCss}">${smokeCat}</span></div>
+         <div class="row"><span class="label">Official PM2.5 Category:</span> <span class="${pm25Css}">${pm25Cat}</span></div>
+         <div class="row"><span class="label">US AQI:</span> ${num(now.usaqi,0)} — <span class="${aqiCss}">${aqiCat}</span></div>
+         <div class="row"><span class="label">PM10 / Dust Particles:</span> ${num(now.pm10)} µg/m³ — <span class="${pm10Css}">${pm10Cat}</span></div>
          <div class="row"><span class="label">Ozone AQI:</span> ${num(now.ozoneAqi,0)} — <span class="${ozoneCss}">${ozoneCat}</span></div>
          <div class="row"><span class="label">Modeled Dust:</span> ${num(now.dust)}</div>
          <div class="row"><span class="label">Wind:</span> ${num(now.wind)} mph — <span class="${windCss}">${windCat}</span></div>
@@ -316,12 +367,13 @@ async function loadAirData(){
          <div class="row"><span class="label">Rain:</span> ${num(now.rain,2)} in/hr</div>`;
 
     document.getElementById("note").innerHTML =
-        `No-key model-based forecast. Best used for trends: dust, wind, dry air, ozone, PM2.5, and PM10. Pollen is not included because reliable no-key U.S. pollen data is weak.`;
+        `No-key model-based forecast from Open-Meteo. PM2.5 is treated as the practical wildfire-smoke/fine-particle warning signal, but the model cannot prove the particle source. Best used for trends: smoke/fine particles, dust, wind, dry air, ozone, PM10, and PM2.5.`;
 }
 
 loadAirData().catch(err => {
     document.getElementById("status").innerHTML = `<span class="rough">Data Error</span>`;
     document.getElementById("recommendation").innerHTML = "Could not load air/weather data.";
+    document.getElementById("note").innerHTML = "Check the browser console or the data/API connection.";
     console.error(err);
 });
 </script>
